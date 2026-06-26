@@ -186,20 +186,23 @@ Components live under `catalog/` in a `category/series/part.js` tree; each file 
 
 | Category | Parts (type) |
 |----------|--------------|
-| **passive** | `resistor`, `capacitor`, `cap_np`, `electrolytic`, `inductor`, `pot` |
-| **discrete** | `diode`, `led`, `npn`, `pnp`, `jfet_n`, `jfet_p`, `nmos`, `pmos`, `phototransistor` |
-| **ic** | `ne555`, `lm358`, `opamp`, `arduino` |
+| **passive** | `resistor`, `capacitor`, `cap_np`, `electrolytic`, `inductor`, `pot`, `crystal`, `fuse`, `transformer` |
+| **discrete** | `diode`, `schottky`, `led`, `npn`, `pnp`, `jfet_n`, `jfet_p`, `nmos`, `pmos`, `phototransistor` |
+| **ic** | `ne555`, `lm358`, `opamp`, `arduino`, `and`, `or`, `not`, `nand`, `nor`, `xor`, `xnor`, `buffer` |
 | **power** | `vcc`, `gnd` |
 | **connector / module** | `header`, `module`, `sensor`, `lcd1602` |
-| **electromech** | `pushbutton` |
+| **electromech** | `pushbutton`, `relay` |
 | **misc** | `buzzer`, `port` |
 
 **Pin reference conventions:**
 
-- Two-terminal parts: `1` / `2` (diodes & LEDs use `a` / `c`).
+- Two-terminal parts: `1` / `2` (diodes, LEDs & Schottky use `a` / `c`).
 - Transistors: `b` / `c` / `e`.
 - ICs & modules: their printed pin names (`U1:THR`, `U1:V+`) or numbers (`U1:8`).
 - Op-amps add `+`, `-`, `out`, `V+`, `V-`.
+- Logic gates: inputs `a` / `b`, output `y` (`not` / `buffer` take a single input `a`).
+- Transformer: `1` / `2` primary, `3` / `4` secondary.
+- Relay: `a1` / `a2` coil, `com` pole, `no` / `nc` contacts.
 
 ### Add your own component
 
