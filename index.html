@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>schemtrace — SVG electronic schematic drawer</title>
+<style>
+  :root { --bg:#0c1117; --panel:#121a22; --line:#1f2a35; --ink:#e6edf3; --mut:#8a98a5; --acc:#2f7fd1; }
+  body.light { --bg:#ffffff; --panel:#f4f7fa; --line:#dde5ec; --ink:#1a2330; --mut:#5c6976; --acc:#2f7fd1; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  header { padding:14px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:14px; }
+  header h1 { margin:0; font-size:17px; font-weight:700; letter-spacing:.3px; }
+  header h1 span { color:var(--mut); font-weight:400; }
+  header .v { color:var(--mut); font:12px ui-monospace,monospace; }
+  header .sp { flex:1; }
+  header a { color:var(--acc); text-decoration:none; font-size:13px; }
+  label.f { color:var(--mut); font-size:12px; }
+  select, button { background:var(--panel); color:var(--ink); border:1px solid var(--line);
+    border-radius:6px; padding:6px 9px; font-size:13px; cursor:pointer; }
+  button:hover, select:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); color:#fff; border-color:var(--acc); font-weight:600; }
+  main { display:grid; grid-template-columns: 360px 1fr; gap:1px; background:var(--line);
+    min-height:calc(100vh - 55px); }
+  .pane { background:var(--bg); overflow:auto; }
+  .editor { display:flex; flex-direction:column; position:sticky; top:0; height:calc(100vh - 55px); }
+  .toolbar { padding:9px 12px; border-bottom:1px solid var(--line); display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  textarea { flex:1; min-height:200px; resize:none; border:none; outline:none; background:var(--bg);
+    color:var(--ink); padding:13px; font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; tab-size:2; }
+  .err { color:#c0392b; padding:7px 13px; font:12px/1.45 ui-monospace,monospace; min-height:16px;
+    border-top:1px solid var(--line); white-space:pre-wrap; max-height:120px; overflow:auto; }
+  .err.show { background:rgba(224,80,80,.14); border-top:1px solid #e0635d; }
+  .canvas-wrap { margin:8px 18px 18px; height:calc(100vh - 126px); overflow:auto; border:1px solid var(--line);
+    border-radius:8px; background:var(--panel); cursor:grab; }
+  .hint-bar { margin:14px 18px 0; padding:6px 11px; font:12px/1.35 ui-sans-serif,system-ui,sans-serif;
+    color:var(--mut); background:var(--panel); border:1px solid var(--line); border-radius:6px; }
+  .hint-bar b { color:var(--ink); font-weight:600; }
+  .canvas-wrap.panning { cursor:grabbing; }
+  .canvas-wrap > div { display:inline-block; }
+  .canvas-wrap svg { display:block; }
+  .canvas-wrap svg .wire { cursor:pointer; }
+  .canvas-wrap svg .part { cursor:move; }
+  .canvas-wrap.dragging, .canvas-wrap.dragging * { cursor:grabbing !important; }
+
+  /* top-level page nav */
+  .nav { display:flex; gap:2px; margin-left:6px; }
+  .navbtn { background:none; border:none; border-bottom:2px solid transparent; border-radius:0;
+    padding:6px 12px; color:var(--mut); cursor:pointer; font-size:13px; }
+  .navbtn:hover { color:var(--ink); border-color:transparent; }
+  .navbtn.active { color:var(--ink); border-bottom-color:var(--acc); font-weight:600; }
+  .page { display:none; }
+  .page.active { display:block; }
+
+  /* catalog browser */
+  .catalog { padding:10px 18px 30px; }
+  .cat { margin-bottom:6px; }
+  .cat > summary { cursor:pointer; font-weight:600; font-size:13px; padding:6px 0; color:var(--ink); }
+  .series { color:var(--mut); font-size:11px; text-transform:uppercase; letter-spacing:.5px; margin:8px 0 4px; }
+  .symbols { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; }
+  .sym { border:1px solid var(--line); border-radius:8px; padding:6px; background:var(--panel); cursor:pointer; }
+  .sym:hover { border-color:var(--acc); }
+  .sym .nm { color:var(--mut); font-size:11px; text-align:center; margin-top:3px; font-family:ui-monospace,monospace; }
+
+  /* examples cards */
+  .cards { padding:14px 22px 50px; display:grid; gap:14px; max-width:760px; }
+  .card { border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .card .head { display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:9px 12px; background:var(--panel); }
+  .card .head b { font-size:13px; }
+  .card .head span { color:var(--mut); font-size:12px; flex:1; }
+  .card pre { margin:0; padding:11px 13px; overflow:auto; white-space:pre;
+    font:12px/1.5 ui-monospace,Menlo,monospace; color:var(--ink); }
+
+  /* guide / format */
+  .guide { padding:12px 22px 60px; max-width:880px; color:var(--mut); }
+  .guide h3 { color:var(--ink); font-size:13.5px; margin:18px 0 8px; }
+  .guide p { margin:7px 0; }
+  .guide code { background:var(--panel); padding:1px 5px; border-radius:4px; color:var(--ink); font:12px ui-monospace,Menlo,monospace; }
+  .guide table { border-collapse:collapse; margin:4px 0; }
+  .guide td { padding:3px 16px 3px 0; vertical-align:top; border-bottom:1px solid var(--line); }
+  .guide td:first-child { white-space:nowrap; }
+  pre.ex { position:relative; background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:11px 13px; margin:9px 0; overflow:auto; font:12.5px/1.5 ui-monospace,Menlo,monospace; color:var(--ink); }
+  pre.ex .tag { position:absolute; top:7px; right:7px; font-size:11px; color:var(--mut); background:var(--bg);
+    border:1px solid var(--line); border-radius:5px; padding:2px 7px; cursor:pointer; font-family:system-ui,sans-serif; }
+  pre.ex .tag:hover { color:var(--acc); border-color:var(--acc); }
+</style>
+</head>
+<body class="light">
+<header>
+  <h1>schemtrace <span>· SVG schematic drawer</span></h1>
+  <span class="v" id="ver"></span>
+  <nav class="nav" id="nav">
+    <button class="navbtn active" data-page="editor">Editor</button>
+    <button class="navbtn" data-page="catalog">Catalog</button>
+    <button class="navbtn" data-page="format">Format</button>
+    <button class="navbtn" data-page="examples">Examples</button>
+  </nav>
+  <span class="sp"></span>
+  <button id="ui" title="Toggle page appearance">☀ light UI</button>
+  <label class="f">canvas</label>
+  <select id="theme">
+    <option>light</option><option>dark</option><option selected>blueprint</option><option>mono</option>
+  </select>
+  <a id="dl" href="#">⤓ SVG</a>
+</header>
+
+<div class="page active" id="page-editor">
+<main>
+  <section class="pane editor">
+    <div class="toolbar">
+      <label class="f">example</label>
+      <select id="examples"></select>
+      <button class="primary" id="run">Render ▶</button>
+      <label class="f"><input type="checkbox" id="grid" checked> grid</label>
+      <span style="flex:1"></span>
+      <button id="zout" title="Zoom out">−</button>
+      <span id="zlvl" class="f" style="min-width:40px;text-align:center">100%</span>
+      <button id="zin" title="Zoom in">+</button>
+      <button id="zrst" title="Fit to view">⤢</button>
+    </div>
+    <textarea id="src" spellcheck="false"></textarea>
+    <div class="err" id="err"></div>
+  </section>
+
+  <section class="pane">
+    <div class="hint-bar">Click a wire to <b>highlight its network</b> · drag a component to <b>move it</b> (mouse or touchpad — the script updates on drop) · wheel to zoom, drag empty canvas to pan, ⤢ to fit</div>
+    <div class="canvas-wrap"><div id="app"></div></div>
+  </section>
+</main>
+</div><!-- /page-editor -->
+
+<div class="page" id="page-catalog">
+  <div class="catalog" id="catalog"></div>
+</div>
+
+<div class="page" id="page-examples">
+  <div class="cards" id="examplecards"></div>
+</div>
+
+<div class="page" id="page-format">
+      <div class="guide">
+        <p>A schematic is a list of lines — <b>components</b> and <b>nets</b>. Lines starting with
+          <code>#</code>, <code>//</code> or <code>%%</code> are comments; a lone <code>schematic</code> line is ignored.</p>
+
+        <h3>1 · Header directives</h3>
+        <table>
+          <tr><td><code>Theme: blueprint</code></td><td>set the canvas theme from the script (<code>light · dark · blueprint · mono</code>)</td></tr>
+          <tr><td><code>Title: "My board"</code></td><td>document title (metadata)</td></tr>
+        </table>
+
+        <h3>2 · Components</h3>
+        <p><code>&lt;ID&gt;: &lt;name&gt; &lt;subname&gt; [@x,y] [rot:N] [flip] [flipv] [*w,h] [#hex] [bg:#hex]</code></p>
+        <p class="hint" style="font-size:12px"><b>ID</b> is the designator you reference in nets (e.g. <code>R1</code>, <code>U2</code>).
+          <b>name</b> is the component <i>type</i> from the catalog (resistor, lm358, led…). <b>subname</b> is the value/label
+          shown under it (10k, +5V, BC547).</p>
+        <table>
+          <tr><td><code>R1: resistor 10k @12,4</code></td><td>resistor R1, value 10k, pinned at cell 12,4</td></tr>
+          <tr><td><code>U1: lm358 @24,6</code></td><td>an IC (no value)</td></tr>
+          <tr><td><code>C1: capacitor rot:90</code></td><td>orientation — <code>rot:0|90|180|270</code></td></tr>
+          <tr><td><code>U2: lm358 @24,6,90</code></td><td>orientation as the 3rd value of <code>@x,y,deg</code></td></tr>
+          <tr><td><code>Q1: npn BC547 flip</code></td><td>mirror horizontally</td></tr>
+          <tr><td><code>Q2: npn BC547 flipv</code></td><td>mirror vertically (alias <code>mirrorv</code>/<code>vflip</code>)</td></tr>
+          <tr><td><code>J1: header *1,8</code></td><td>resize a flexible part — <code>*width,height</code> in cells. Only <code>flexW</code>/<code>flexH</code> parts honor it; here height 8 → a 4-pin header (1 pin per 2 cells), the width is ignored</td></tr>
+          <tr><td><code>D1: led #2266ff</code></td><td>override the symbol color (hex)</td></tr>
+          <tr><td><code>U1: lm358 bg:#3345aaff</code></td><td>background fill — 8-digit hex <code>#rrggbb<b>aa</b></code> adds transparency for a highlight tint</td></tr>
+        </table>
+        <p class="hint" style="font-size:12px">The <code>@x,y</code> cell is the top-left of the part's box; pins sit at fixed offsets from it.
+          Wrap a value in quotes only if it contains spaces, e.g. <code>U1: lm358 "dual amp"</code>.</p>
+
+        <h3>3 · Nets (wires between pins)</h3>
+        <p>Reference a pin as <code>ID:pin</code> (or <code>ID.pin</code>). A net lists every pin on the same node;
+          junction dots appear automatically where three or more meet.</p>
+        <table>
+          <tr><td><code>net: SIG R1:2 U1:3</code></td><td>connect two pins, net named SIG</td></tr>
+          <tr><td><code>net: +5V PWR:+ U1:8 R1:1</code></td><td>multi-pin power net</td></tr>
+          <tr><td><code>wire: U1:1 D1:a</code></td><td>a single unnamed wire</td></tr>
+          <tr><td><code>net: +5V #d23 PWR:+ R1:1</code></td><td>colour the whole net (hex, anywhere on the line) — wires &amp; junction dots</td></tr>
+          <tr><td><code>label: @40,2 "OUT"</code></td><td>a free net label at a grid cell</td></tr>
+        </table>
+        <p>Colour overrides: add a <code>#hex</code> to a component line to recolour its symbol
+          (<code>D1: led #2266ff</code>), or to a <code>net:</code>/<code>wire:</code> line to recolour that net's
+          traces — handy for highlighting power, ground or a signal of interest.</p>
+        <pre class="ex" data-ex>schematic
+  Theme: blueprint
+  PWR: vcc +5V  @8,0
+  R1:  resistor 330 @10,4
+  D1:  led @20,3
+  G1:  gnd @24,8
+  net: VCC PWR:+ R1:1
+  net: SIG R1:2 D1:a
+  net: OUT D1:c G1:g<span class="tag">Try ▸</span></pre>
+
+        <h3>4 · Pin names by part</h3>
+        <p>Two-terminal parts use <code>1</code>/<code>2</code> (or <code>a</code>/<code>c</code> for diodes/LEDs).
+          Transistors use <code>b</code>/<code>c</code>/<code>e</code>. ICs &amp; modules use their printed pin
+          names (<code>U1:OUT</code>, <code>U1:+IN</code>) or numbers (<code>U1:8</code>). Op-amp triangles add
+          <code>V+</code>/<code>V-</code>/<code>out</code>. Power parts expose <code>+</code> (vcc) and <code>g</code> (gnd).</p>
+
+        <h3>5 · Wiring &amp; auto-routing</h3>
+        <p>Every wire leaves a pin through a one-cell <b>standoff</b> (so lines never run across the pins or the body),
+          then an <b>A* grid router</b> finds an orthogonal path that goes <i>around</i> parts and penalizes turns and
+          crossings with other nets. Placement still matters — pin via <code>@x,y</code> to lay things out; the router
+          handles the connections.</p>
+
+        <h3>6 · Themes</h3>
+        <p>Use <code>Theme:</code> in the script, the <b>canvas</b> selector above, or the API. Every visual element is its own token:</p>
+        <pre class="ex">new SCH.Schematic('#app', { theme: 'blueprint' });
+
+// override individual tokens (merged onto a base preset):
+new SCH.Schematic('#app', { theme: {
+  base: 'dark',
+  part:'#e0a458',   // component leads / outline
+  body:'#0f141a',   // body fill
+  wire:'#4cc38a',   // wires
+  junction:'#4cc38a',
+  pin:'#5aa9e6',    // pin labels &amp; leads
+  ref:'#e0a458',    // designators (R1, U2)
+  value:'#aeb9c4',  // values (10k)
+  name:'#e6edf3',   // IC / module name
+  bg:'#0f141a', grid:'#1b232c'
+}});</pre>
+
+        <h3>7 · JavaScript API</h3>
+        <pre class="ex">const s = new SCH.Schematic('#app', { cols:60, rows:36, cell:16, theme:'light' });
+s.add('lm358',    { id:'U1', at:[24,4] });
+s.add('resistor', { id:'R1', at:[14,2], value:'10k' });
+s.add('vcc',      { id:'P1', at:[24,0], value:'+5V' });
+s.add('gnd',      { id:'G1', at:[24,16] });
+s.net('+5V', ['P1.+', 'U1.8']);
+s.net('IN',  ['R1.2', 'U1.3']);
+s.wire('U1.4', 'G1.g');
+s.fit(3).render();
+const svg = s.toSVG();   // serialized SVG string</pre>
+
+        <h3>8 · Extending the catalog</h3>
+        <p>Drop a self-registering file in <code>/catalog/&lt;category&gt;/&lt;series&gt;/</code> and list it in
+          <code>catalog/manifest.js</code>:</p>
+        <pre class="ex">// catalog/passive/basic/potentiometer.js
+SCH.define({
+  type:'pot', category:'passive', series:'basic', name:'Potentiometer', ref:'RV',
+  w:8, h:3, hidePins:true,
+  pins:{ '1':{at:[0,2],side:'l'}, '2':{at:[8,2],side:'r'}, 'w':{at:[4,0],side:'t'} },
+  draw:function(p){ p.line(0,2,1.5,2); p.rect(1.5,1.4,5,1.2,{fill:p.theme.body}); p.line(6.5,2,8,2);
+                    p.line(4,0,4,1.1); p.polygon([[3.6,1.1],[4.4,1.1],[4,1.6]]); }
+});</pre>
+        <p>An IC/module just lists pins per side — pin numbers, names, lead stubs and the body auto-size:</p>
+        <pre class="ex">SCH.define({
+  type:'ne555', category:'ic', series:'timer', name:'NE555', ref:'U', showName:true, lead:1,
+  sides:{ left:['1:GND','2:TRIG','3:OUT','4:RST'],
+          right:['8:VCC','7:DISCH','6:THRES','5:CTRL'] },
+  draw:function(p){ SCH.icBody(p); }
+});</pre>
+        <p><b>Label placement options</b> (read by the auto-placer at construction):</p>
+        <table>
+          <tr><td><code>labelInside: true</code></td><td>allow the designator/name to sit <i>inside</i> the body when sides are crowded — defaults on for <code>showName</code> (IC-style) parts, off for discrete parts</td></tr>
+          <tr><td><code>labelPos: 'inside'</code></td><td>force inside (e.g. the op-amp triangle)</td></tr>
+          <tr><td><code>labelPos: 'right'</code></td><td>prefer a side (e.g. transistors, whose top/bottom/left carry pins)</td></tr>
+        </table>
+        <p class="hint" style="font-size:12px">Otherwise the engine auto-picks the least-crowded side around the part.</p>
+      </div>
+</div><!-- /page-format -->
+
+<script src="schemtrace.js"></script>
+<script src="catalog/manifest.js"></script>
+<script>
+  var $ = function (s) { return document.querySelector(s); };
+
+  var EXAMPLES = [
+    { name: "NE555 boost converter", desc: "NE555 astable driving a MOSFET boost stage with feedback.", text:
+`schematic
+  Theme: light
+  # power rails
+  VDD: vcc VDD @8,6
+  VP:  vcc V+ @82,2
+  # connectors
+  JP1: header *1,10 @2,15
+  JP3: header *1,4  @80,6 flip
+  JP2: header *1,10 @80,15 flip
+  # input filter
+  C2:  electrolytic 470u @9,21 rot:90
+  R2:  resistor 1k @12,15 rot:90
+  R1:  resistor 10k @18,21
+  # NE555 oscillator
+  U1:  ne555 @28,14
+  C1:  capacitor 2n2 @31,31 rot:90
+  GU:  gnd @37,9
+  R3:  resistor 56k @41,13 rot:90
+  # power stage
+  L1:  inductor 100uH @38,4
+  D1:  diode 1N4148 @57,4
+  R4:  resistor 2k2 @49,13 rot:90
+  Q1:  nmos IRF740 @54,19
+  C3:  capacitor 100p @60,27 rot:90
+  C4:  electrolytic 2u2/400V @61,21 rot:90
+  # feedback
+  R5:  resistor 220k @64,13 rot:90
+  R7:  pot 1k @68,21
+  Q3:  npn BC817 @42,26
+  R6:  resistor 470R @68,29 rot:90
+  # grounds
+  G1: gnd @4,36
+  G2: gnd @9,36
+  G3: gnd @31,36
+  G4: gnd @42,36
+  G5: gnd @52,36
+  G6: gnd @58,36
+  G7: gnd @62,36
+  G8: gnd @68,36
+  G9: gnd @80,36
+  # nets
+  net: VDD VDD:+ C2:1 R2:1 R1:1 U1:8 U1:4 R4:1 L1:1
+  net: OSC1 R1:2 U1:7 R3:1
+  net: OSC2 R3:2 U1:6 U1:2 C1:1
+  net: GATE U1:3 Q1:g R4:2
+  net: SW  L1:2 D1:a Q1:d C3:1
+  net: VO  D1:c C4:1 VP:+ R5:1 JP3:1
+  net: FB  R5:2 R7:1
+  net: WIP R7:w Q3:b
+  net: RT  R7:2 R6:1
+  net: CV  U1:5 Q3:c
+  net: gA  U1:1 GU:g
+  net: gB  C1:2 G3:g
+  net: gC  C2:2 G2:g
+  net: gD  Q3:e G4:g
+  net: gE  Q1:s G5:g
+  net: gF  C3:2 G6:g
+  net: gG  C4:2 G7:g
+  net: gH  R6:2 G8:g
+  net: gI  JP1:1 G1:g
+  net: gJ  JP2:5 G9:g
+  net: in  JP1:5 VDD:+
+  net: o2  JP2:1 VP:+
+  net: o3  JP3:2 G9:g` },
+
+    { name: "LED driver", desc: "Header → resistor → LED → ground.", text:
+`schematic
+  Theme: blueprint
+  PWR: vcc +5V  @8,0
+  J1:  header *1,4 @2,2
+  R1:  resistor 330 @12,4
+  D1:  led @22,3
+  G1:  gnd @26,8
+  G2:  gnd @3,8
+  net: VCC J1:1 PWR:+ R1:1
+  net: SIG R1:2 D1:a
+  net: OUT D1:c G1:g
+  net: GND J1:2 G2:g` },
+
+    { name: "Op-amp comparator", desc: "LM358 with a divider, reference and LED.", text:
+`schematic
+  Theme: blueprint
+  PWR: vcc +5V @28,0
+  U1:  lm358 @22,6
+  R1:  resistor 10k @6,6
+  R2:  resistor 10k @6,12
+  R3:  resistor 1k  @36,7
+  D1:  led @46,7
+  G1:  gnd @8,18
+  G2:  gnd @22,20
+  G3:  gnd @52,12
+  net: +5V PWR:+ U1:8
+  net: DIV R1:2 R2:1 U1:3
+  net: VIN R1:1 PWR:+
+  net: REF R2:2 G1:g
+  net: OUT U1:1 R3:1
+  net: LED R3:2 D1:a
+  net: K   D1:c G3:g
+  net: VN  U1:4 G2:g` },
+
+    { name: "Transistor switch", desc: "NPN driving an LED from a base resistor.", text:
+`schematic
+  Theme: dark
+  PWR: vcc +5V @20,0
+  R1:  resistor 1k  @4,8
+  Q1:  npn BC547 @18,9
+  R2:  resistor 330 @18,2
+  D1:  led @28,2
+  G1:  gnd @20,18
+  net: BASE R1:2 Q1:b
+  net: IN   R1:1 PWR:+
+  net: VCC  PWR:+ R2:1
+  net: LEDA R2:2 D1:a
+  net: COL  D1:c Q1:c
+  net: EMIT Q1:e G1:g` },
+
+    { name: "Op-amp buffer (triangle)", desc: "Triangle op-amp symbol, unity-gain follower.", text:
+`schematic
+  Theme: dark
+  PWR: vcc +5V @16,0
+  U1:  opamp NJM4558 @14,6
+  SW1: pushbutton @0,7
+  R1:  resistor 100k @2,15
+  G1:  gnd @16,18
+  G2:  gnd @4,20
+  net: +5V PWR:+ U1:V+
+  net: IN  SW1:2 U1:+
+  net: FB  U1:out U1:-
+  net: REF SW1:2 R1:1
+  net: GR  R1:2 G2:g
+  net: VN  U1:V- G1:g` },
+
+    { name: "Smoke alarm (modules)", desc: "Sensor + comparator + LCD module + net flag.", text:
+`schematic
+  Theme: mono
+  U1:  sensor Smoke @2,2
+  U2:  lm358 @22,4
+  R1:  resistor 10k @22,0
+  LCD: lcd1602 @44,2
+  P1:  port D7 @36,20
+  G1:  gnd @9,16
+  net: SIG U1:B1 U2:3
+  net: REF R1:2 U2:2
+  net: VR  R1:1 U2:6
+  net: OUT U2:1 P1:p
+  net: GND U1:H2 G1:g` }
+  ];
+  var EXMAP = {};
+  EXAMPLES.forEach(function (e) { EXMAP[e.name] = e.text; });
+
+  var BASE_CELL = 18;
+  var state = { theme: 'blueprint', dia: null, zoom: 1, baseW: 0, baseH: 0, hlNet: null };
+
+  // bold one network (by net id) and dim the rest; null clears the highlight
+  function highlightNet(nid) {
+    state.hlNet = nid;
+    var svg = state.dia && state.dia.svg; if (!svg) return;
+    svg.querySelectorAll('.wire').forEach(function (p) {
+      if (nid == null) { p.style.strokeWidth = ''; p.style.opacity = ''; return; }
+      var on = p.getAttribute('data-nid') === String(nid);
+      p.style.strokeWidth = on ? (parseFloat(p.getAttribute('stroke-width')) * 2.4) : '';
+      p.style.opacity = on ? '1' : '0.25';
+    });
+    svg.querySelectorAll('.junction').forEach(function (c) {
+      c.style.opacity = (nid == null) ? '' : (c.getAttribute('data-nid') === String(nid) ? '1' : '0.25');
+    });
+  }
+
+  // rewrite a component's @x,y in the script after a drag-drop (adds @x,y if absent)
+  function updateCompPos(id, col, row) {
+    var esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var head = new RegExp('^\\s*' + esc + '(?=[\\s:])');
+    var lines = $('#src').value.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (!head.test(lines[i])) continue;
+      var at = lines[i].match(/@(-?\d+),(-?\d+)(,\d+)?/);
+      var tok = '@' + col + ',' + row + (at && at[3] ? at[3] : '');
+      lines[i] = at ? lines[i].replace(at[0], tok) : lines[i].replace(/\s*$/, '') + ' ' + tok;
+      break;
+    }
+    $('#src').value = lines.join('\n');
+  }
+
+  function render() {
+    try {
+      var prev = state.dia;                  // keep the view stable while editing
+      state.dia = SCH.draw('#app', $('#src').value, {
+        cell: BASE_CELL, theme: state.theme, grid: $('#grid').checked, margin: 3
+      });
+      state.hlNet = null;   // fresh wires — drop any prior highlight
+      // reflect a script `Theme:` directive in the selector
+      if (state.dia.usedTheme) $('#theme').value = state.dia.usedTheme;
+      if (prev && prev.offX != null) {       // reuse prior offset so content doesn't jump
+        state.dia.cols = prev.cols; state.dia.rows = prev.rows;
+        state.dia.setOffset(prev.offX, prev.offY); state.dia.render();
+        ensureFill(); applyZoomStyle();
+      } else {
+        layout();
+      }
+      showErrors((state.dia && state.dia.errors) || []);
+    } catch (e) {
+      showErrors(['Could not render: ' + e.message]);
+    }
+  }
+  function showErrors(errs) {
+    var box = $('#err');
+    if (!errs.length) { box.textContent = ''; box.className = 'err'; return; }
+    box.className = 'err show';
+    box.textContent = '⚠ ' + errs.length + ' issue' + (errs.length > 1 ? 's' : '') +
+      ' — these did not render:\n• ' + errs.join('\n• ');
+  }
+  // size the grid to fill the viewport (or wrap the content, whichever is larger)
+  // and shift the content to the canvas centre, so it can actually be scrolled to
+  // the middle of the pane — the grid still covers the whole view.
+  function layout() {
+    if (!state.dia) return;
+    var d = state.dia, s = BASE_CELL, wrap = $('.canvas-wrap');
+    var z = Math.max(state.zoom, 0.25);
+    var b = d.bounds();                                  // raw content bbox (px)
+    var vCols = Math.ceil(wrap.clientWidth / (s * z)) + 2;
+    var vRows = Math.ceil(wrap.clientHeight / (s * z)) + 2;
+    var cCols = Math.ceil(b.w / s) + 6, cRows = Math.ceil(b.h / s) + 6;
+    d.cols = Math.max(vCols, cCols);
+    d.rows = Math.max(vRows, cRows);
+    d.setOffset((d.cols * s - b.w) / 2 - b.x, (d.rows * s - b.h) / 2 - b.y);
+    d.render();
+    state.baseW = d.cols * s; state.baseH = d.rows * s;
+    applyZoomStyle();
+  }
+  // scroll the pane so the diagram's content (now centred in the canvas) is centred
+  function centerView() {
+    if (!state.dia) return;
+    var d = state.dia, b = d.bounds(), z = state.zoom, wrap = $('.canvas-wrap');
+    wrap.scrollLeft = (b.x + (d.offX || 0) + b.w / 2) * z - wrap.clientWidth / 2;
+    wrap.scrollTop = (b.y + (d.offY || 0) + b.h / 2) * z - wrap.clientHeight / 2;
+  }
+  // zoom so the WHOLE diagram fits in the pane with a margin, then centre it
+  function fitView() {
+    if (!state.dia) return;
+    var wrap = $('.canvas-wrap'), b = state.dia.bounds(), pad = BASE_CELL;  // bounds already has a 1-cell margin
+    if (b.w <= 0 || b.h <= 0 || !wrap.clientWidth) { applyZoom(1); layout(); centerView(); return; }
+    var z = Math.min((wrap.clientWidth - pad) / b.w, (wrap.clientHeight - pad) / b.h);
+    applyZoom(Math.max(0.25, Math.min(2, z)));
+    layout(); centerView();
+  }
+  // render then fit the whole diagram in view (load / example / explicit render — not typing)
+  function renderCentered() { render(); fitView(); }
+  // grow the canvas (never shrink, keep the content offset) so the grid keeps
+  // filling the pane after a zoom-out
+  function ensureFill() {
+    if (!state.dia) return;
+    var wrap = $('.canvas-wrap'), z = Math.max(state.zoom, 0.25);
+    var nc = Math.ceil(wrap.clientWidth / (BASE_CELL * z)) + 2;
+    var nr = Math.ceil(wrap.clientHeight / (BASE_CELL * z)) + 2;
+    if (state.dia.cols < nc || state.dia.rows < nr) {
+      state.dia.cols = Math.max(state.dia.cols, nc);
+      state.dia.rows = Math.max(state.dia.rows, nr);
+      state.dia.render();
+    }
+    state.baseW = state.dia.cols * BASE_CELL;
+    state.baseH = state.dia.rows * BASE_CELL;
+  }
+  function applyZoomStyle() {
+    if (state.dia && state.dia.svg) {
+      state.dia.svg.style.width = (state.baseW * state.zoom) + 'px';
+      state.dia.svg.style.height = (state.baseH * state.zoom) + 'px';
+    }
+    $('#zlvl').textContent = Math.round(state.zoom * 100) + '%';
+  }
+  // viewport zoom: scale the rendered SVG (crisp vector); the pane scrolls/pans
+  function applyZoom(z) {
+    state.zoom = Math.min(4, Math.max(0.25, z));
+    ensureFill();
+    applyZoomStyle();
+  }
+  function zoomBy(factor) {
+    var wrap = $('.canvas-wrap');
+    var cx = wrap.scrollLeft + wrap.clientWidth / 2, cy = wrap.scrollTop + wrap.clientHeight / 2;
+    var old = state.zoom; applyZoom(old * factor);
+    var k = state.zoom / old;
+    wrap.scrollLeft = cx * k - wrap.clientWidth / 2;
+    wrap.scrollTop = cy * k - wrap.clientHeight / 2;
+  }
+
+  function buildCatalog() {
+    var host = $('#catalog'); host.innerHTML = '';
+    var tree = SCH.tree();
+    Object.keys(tree).sort().forEach(function (cat) {
+      var d = document.createElement('details'); d.className = 'cat'; d.open = true;
+      d.innerHTML = '<summary>' + cat + '</summary>';
+      Object.keys(tree[cat]).sort().forEach(function (series) {
+        var sh = document.createElement('div'); sh.className = 'series'; sh.textContent = series;
+        d.appendChild(sh);
+        var wrap = document.createElement('div'); wrap.className = 'symbols';
+        tree[cat][series].forEach(function (spec) {
+          var cell = document.createElement('div'); cell.className = 'sym';
+          var box = document.createElement('div'); cell.appendChild(box);
+          var nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = spec.type; cell.appendChild(nm);
+          wrap.appendChild(cell);
+          try {
+            var s = new SCH.Schematic(box, { cols: 6, rows: 4, cell: 13, grid: false, theme: state.theme });
+            var sample = (spec.category === 'power' || spec.type === 'port') ? spec.name : '';
+            s.add(spec.type, { id: (spec.ref || 'X') + '1', at: [1, 1], value: sample });
+            s.fit(1).render();
+          } catch (e) { box.textContent = '?'; }
+          cell.onclick = function () {
+            var ta = $('#src');
+            ta.value = ta.value.replace(/\s*$/, '') + '\n  ' + (spec.ref || 'X') + '1: ' + spec.type + ' @2,2';
+            switchPage('editor'); renderCentered();
+          };
+        });
+        d.appendChild(wrap);
+      });
+      host.appendChild(d);
+    });
+  }
+
+  function buildExamples() {
+    var host = $('#examplecards'); host.innerHTML = '';
+    EXAMPLES.forEach(function (ex) {
+      var card = document.createElement('div'); card.className = 'card';
+      var head = document.createElement('div'); head.className = 'head';
+      head.innerHTML = '<b>' + ex.name + '</b><span>' + ex.desc + '</span>';
+      var btn = document.createElement('button'); btn.className = 'primary'; btn.textContent = 'Load ▶';
+      btn.onclick = function () {
+        $('#src').value = ex.text; $('#examples').value = ex.name;
+        switchPage('editor'); renderCentered();
+      };
+      head.appendChild(btn); card.appendChild(head);
+      var pre = document.createElement('pre'); pre.textContent = ex.text; card.appendChild(pre);
+      host.appendChild(card);
+    });
+  }
+
+  function switchPage(name) {
+    document.querySelectorAll('.navbtn').forEach(function (b) { b.classList.toggle('active', b.dataset.page === name); });
+    document.querySelectorAll('.page').forEach(function (p) { p.classList.toggle('active', p.id === 'page-' + name); });
+  }
+
+  // boot
+  $('#ver').textContent = 'v' + SCH.version;
+  SCH.load('catalog/', SCH.manifest, function (errs) {
+    if (errs.length) showErrors(['Catalog failed to load: ' + errs.join(', ')]);
+
+    var sel = $('#examples');
+    EXAMPLES.forEach(function (e) { var o = document.createElement('option'); o.textContent = e.name; sel.appendChild(o); });
+    sel.onchange = function () { $('#src').value = EXMAP[sel.value]; renderCentered(); };
+
+    document.querySelectorAll('.navbtn').forEach(function (b) { b.onclick = function () { switchPage(b.dataset.page); }; });
+
+    $('#run').onclick = renderCentered;
+    $('#grid').onchange = render;
+    $('#theme').onchange = function () { state.theme = $('#theme').value; render(); buildCatalog(); };
+    $('#zin').onclick = function () { zoomBy(1.25); };
+    $('#zout').onclick = function () { zoomBy(0.8); };
+    $('#zrst').onclick = fitView;
+
+    var wrap = $('.canvas-wrap');
+    wrap.addEventListener('wheel', function (e) {
+      if (!state.dia) return;
+      e.preventDefault();
+      var rect = wrap.getBoundingClientRect();
+      var px = e.clientX - rect.left, py = e.clientY - rect.top;
+      var mx = wrap.scrollLeft + px, my = wrap.scrollTop + py;
+      var old = state.zoom; applyZoom(old * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+      var k = state.zoom / old;
+      wrap.scrollLeft = mx * k - px; wrap.scrollTop = my * k - py;
+    }, { passive: false });
+
+    var pan = null, dragged = false, drag = null, dragRAF = false;
+    function partUnder(t) { return (t && t.closest) ? t.closest('.part') : null; }
+    wrap.addEventListener('mousedown', function (e) {
+      var pe = partUnder(e.target);
+      if (pe && state.dia) {
+        var inst = state.dia.byId[pe.getAttribute('data-id')];
+        if (inst) {
+          drag = { inst: inst, sx: e.clientX, sy: e.clientY, oc: inst.col, or: inst.row, moved: false };
+          dragged = false; wrap.classList.add('dragging'); e.preventDefault(); return;
+        }
+      }
+      pan = { x: e.clientX, y: e.clientY, l: wrap.scrollLeft, t: wrap.scrollTop };
+      dragged = false; wrap.classList.add('panning');
+    });
+    window.addEventListener('mousemove', function (e) {
+      if (drag) {                                   // moving a component: snap to grid, redraw (no reroute)
+        var z = Math.max(state.zoom, 0.001), cell = BASE_CELL;
+        var nc = drag.oc + Math.round((e.clientX - drag.sx) / z / cell);
+        var nr = drag.or + Math.round((e.clientY - drag.sy) / z / cell);
+        if (nc !== drag.inst.col || nr !== drag.inst.row) {
+          drag.inst.col = nc; drag.inst.row = nr; drag.moved = true; dragged = true;
+          if (!dragRAF) { dragRAF = true; requestAnimationFrame(function () { dragRAF = false; if (state.dia) state.dia.render(); }); }
+        }
+        return;
+      }
+      if (!pan) return;
+      if (Math.abs(e.clientX - pan.x) + Math.abs(e.clientY - pan.y) > 4) dragged = true;
+      wrap.scrollLeft = pan.l - (e.clientX - pan.x); wrap.scrollTop = pan.t - (e.clientY - pan.y);
+    });
+    window.addEventListener('mouseup', function () {
+      if (drag) {                                   // drop: write new @x,y to the script and reroute
+        var d = drag; drag = null; wrap.classList.remove('dragging');
+        if (d.moved) { updateCompPos(d.inst.id, d.inst.col, d.inst.row); render(); }
+        return;
+      }
+      pan = null; wrap.classList.remove('panning');
+    });
+
+    // click a wire to highlight its whole network; click it again or click empty
+    // canvas to clear. (Ignored right after a drag.)
+    wrap.addEventListener('click', function (e) {
+      if (dragged) return;
+      var t = e.target, isWire = t && t.classList && (t.classList.contains('wirehit') || t.classList.contains('wire'));
+      var nid = isWire ? t.getAttribute('data-nid') : null;
+      highlightNet(nid != null && nid === state.hlNet ? null : nid);
+    });
+
+    $('#ui').onclick = function () {
+      var light = document.body.classList.toggle('light');
+      $('#ui').textContent = light ? '☀ light UI' : '🌙 dark UI';
+    };
+    var tmr; $('#src').oninput = function () { clearTimeout(tmr); tmr = setTimeout(render, 250); };
+
+    $('#dl').onclick = function (e) {
+      e.preventDefault(); if (!state.dia) return;
+      var blob = new Blob([state.dia.toSVG()], { type: 'image/svg+xml' });
+      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'schematic.svg'; a.click();
+    };
+
+    document.querySelectorAll('pre.ex[data-ex]').forEach(function (pre) {
+      var tag = pre.querySelector('.tag'); if (!tag) return;
+      tag.onclick = function () {
+        var clone = pre.cloneNode(true); clone.querySelector('.tag').remove();
+        $('#src').value = clone.textContent.trim(); switchPage('editor'); renderCentered();
+      };
+    });
+
+    $('#src').value = EXAMPLES[0].text;
+    buildCatalog();
+    buildExamples();
+    render();
+    requestAnimationFrame(fitView);   // fit once the pane has its real size
+    var rtmr; window.addEventListener('resize', function () {
+      clearTimeout(rtmr); rtmr = setTimeout(fitView, 150);
+    });
+  });
+</script>
+</body>
+</html>

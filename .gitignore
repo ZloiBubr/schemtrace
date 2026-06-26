@@ -1,0 +1,11 @@
+# Claude Code agent working directory
+.claude/
+
+# OS / editor cruft
+.DS_Store
+*.swp
+Thumbs.db
+
+# Node
+node_modules/
+npm-debug.log*
