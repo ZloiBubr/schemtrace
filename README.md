@@ -4,7 +4,7 @@
 
 You describe a circuit as a few lines of plain text (parts at grid cells + nets between their pins); schemtrace auto-routes the wires around the parts, drops junction dots, places labels, and produces a crisp, themeable SVG.
 
-![schemtrace editor](img/editor.png)
+![schemtrace editor](img/view.png)
 
 *The bundled editor (`index.html`): script on the left, live auto-routed schematic on the right, with themes, zoom/pan, a browsable component catalog, and in-page format docs.*
 
@@ -219,13 +219,41 @@ SCH.define({
 
 ## The bundled editor
 
-Open `index.html` in a browser for a full playground:
+Open `index.html` in a browser for a full playground — the script lives in the left
+panel, the live auto-routed schematic on the right.
 
-- **Editor** — type a script, render live, zoom (`+`/`–`/wheel) and drag-pan, auto-centered.
+![editor overview](img/view.png)
+
+- **Editor** — type a script, render live, zoom (`+`/`–`/wheel) and drag-pan, ⤢ to fit the whole diagram in view.
 - **Catalog** — browse every registered component as a symbol card.
 - **Format** — the DSL reference, in-page.
 - **Examples** — ready-made circuits (NE555 boost converter, op-amp, smoke detector…).
 - Theme selector and a light/dark UI toggle; export to SVG.
+
+### Click a wire to highlight its network
+
+Click any wire and the whole electrical net it belongs to is bolded while everything
+else dims — so you can trace where a signal goes across the schematic. Click it again,
+or click empty canvas, to clear.
+
+![highlight one network](img/one-net.png)
+
+### Drag a component to move it
+
+Drag any component with the mouse or touchpad. It snaps to the grid as you move it,
+and **on drop the engine re-routes every affected net and rewrites that part's
+`@x,y` in the script** in the left panel — so the text and the drawing stay in sync,
+and you can keep editing either one.
+
+![move a component](img/move-element.png)
+
+### Per-element and per-net colors
+
+Any component can be recolored (`#hex`) or given a translucent background
+(`bg:#rrggbbaa`), and any net can be colored to make power, ground, or a signal of
+interest stand out — its traces *and* junction dots take the color.
+
+![colored components and nets](img/colors.png)
 
 ---
 
